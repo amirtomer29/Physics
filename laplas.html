@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>סימולציית משוואת לפלס</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: #333;
+        }
+        h1 { margin-bottom: 10px; }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        canvas {
+            background-color: #fff;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            cursor: crosshair;
+            border: 1px solid #ccc;
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 300px;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #0056b3; }
+        button.secondary { background-color: #6c757d; }
+        button.secondary:hover { background-color: #545b62; }
+        
+        .legend {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .gradient-bar {
+            height: 20px;
+            background: linear-gradient(to right, blue, cyan, white, yellow, red);
+            margin-top: 5px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        .labels { display: flex; justify-content: space-between; }
+        p.desc { font-size: 14px; line-height: 1.5; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1>ויזואליזציה של משוואת לפלס ($\nabla^2\phi = 0$)</h1>
+    
+    <div class="container">
+        <canvas id="simCanvas" width="500" height="500"></canvas>
+
+        <div class="controls">
+            <h3>בקרים</h3>
+            <p class="desc">לחץ וגרור על הקנבס כדי לצייר "מקורות" (אדום) או "בורות" (כחול).</p>
+            
+            <label>כלי ציור:</label>
+            <select id="toolSelect" style="width: 100%; padding: 8px; margin-bottom: 15px;">
+                <option value="1">מקור חום/פוטנציאל גבוה (אדום)</option>
+                <option value="-1">בור קור/פוטנציאל נמוך (כחול)</option>
+                <option value="wall">מבודד/מחק (לבן)</option>
+            </select>
+
+            <button onclick="setScenario('plate')">דוגמה 1: לוחות מקבילים</button>
+            <button onclick="setScenario('dipole')">דוגמה 2: דיפול (נקודות)</button>
+            <button onclick="setScenario('box')">דוגמה 3: קופסה סגורה</button>
+            <hr>
+            <button class="secondary" onclick="clearGrid()">נקה הכל</button>
+
+            <div class="legend">
+                <strong>מקרא טמפרטורה/פוטנציאל:</strong>
+                <div class="gradient-bar"></div>
+                <div class="labels">
+                    <span>-1 (קר)</span>
+                    <span>0</span>
+                    <span>+1 (חם)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // הגדרות הרשת
+    const GRID_SIZE = 100; // רזולוציית הרשת (100x100 משבצות)
+    const CANVAS_SIZE = 500;
+    const CELL_SIZE = CANVAS_SIZE / GRID_SIZE;
+    
+    // מערכים לשמירת המידע: u הנוכחי, u_new לחישוב הבא, ו-fixed לסימון תנאי שפה
+    let u = []; 
+    let u_new = []; 
+    let fixed = []; // בוליאני: האם התא קבוע ולא משתנה?
+
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // אתחול המערכים
+    function initGrid() {
+        u = []; u_new = []; fixed = [];
+        for (let i = 0; i < GRID_SIZE; i++) {
+            u[i] = []; u_new[i] = []; fixed[i] = [];
+            for (let j = 0; j < GRID_SIZE; j++) {
+                u[i][j] = 0;
+                u_new[i][j] = 0;
+                fixed[i][j] = false;
+            }
+        }
+    }
+
+    // הליבה המתמטית: איטרציה אחת של משוואת לפלס
+    function solveLaplace() {
+        // בצע מספר חזרות בכל פרייים כדי להאיץ את האנימציה
+        for (let k = 0; k < 20; k++) {
+            for (let x = 1; x < GRID_SIZE - 1; x++) {
+                for (let y = 1; y < GRID_SIZE - 1; y++) {
+                    
+                    // אם זה תנאי שפה קבוע, אל תיגע בו
+                    if (fixed[x][y]) {
+                        u_new[x][y] = u[x][y];
+                        continue;
+                    }
+
+                    // הנוסחה: הערך הוא הממוצע של 4 השכנים
+                    // u(x,y) = (u(x+1,y) + u(x-1,y) + u(x,y+1) + u(x,y-1)) / 4
+                    const average = (u[x+1][y] + u[x-1][y] + u[x][y+1] + u[x][y-1]) * 0.25;
+                    u_new[x][y] = average;
+                }
+            }
+            
+            // עדכון המערך הראשי והחלפת תפקידים (אופטימיזציה פשוטה)
+            // כאן פשוט נעתיק את הערכים חזרה למערך u
+            for (let x = 1; x < GRID_SIZE - 1; x++) {
+                for (let y = 1; y < GRID_SIZE - 1; y++) {
+                    u[x][y] = u_new[x][y];
+                }
+            }
+        }
+    }
+
+    // ציור הרשת על הקנבס
+    function draw() {
+        // שימוש ב-ImageData לשיפור ביצועים (מניפולציית פיקסלים ישירה)
+        const imgData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+        const data = imgData.data;
+
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const val = u[x][y]; // ערך בין -1 ל-1
+                
+                // המרה לצבעים (Heatmap)
+                let r, g, b;
+                
+                // מיפוי פשוט: כחול (-1) -> לבן (0) -> אדום (1)
+                if (val < 0) {
+                    // כחול ללבן
+                    const intensity = 1 + val; // 0 עד 1
+                    r = 255 * intensity;
+                    g = 255 * intensity;
+                    b = 255;
+                } else {
+                    // לבן לאדום
+                    const intensity = 1 - val; // 1 עד 0
+                    r = 255;
+                    g = 255 * intensity;
+                    b = 255 * intensity;
+                }
+
+                // ציור הפיקסלים (מצייר ריבוע של CELL_SIZE x CELL_SIZE)
+                // לטובת פשטות קוד כאן אנו מציירים ישירות למערך הפיקסלים של הקנבס
+                // נמלא בלוק פיקסלים בהתאם לגודל התא
+                for (let dy = 0; dy < CELL_SIZE; dy++) {
+                    for (let dx = 0; dx < CELL_SIZE; dx++) {
+                        const pxIndex = ((y * CELL_SIZE + dy) * CANVAS_SIZE + (x * CELL_SIZE + dx)) * 4;
+                        data[pxIndex] = r;     // Red
+                        data[pxIndex + 1] = g; // Green
+                        data[pxIndex + 2] = b; // Blue
+                        data[pxIndex + 3] = 255; // Alpha
+                    }
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        
+        requestAnimationFrame(loop);
+    }
+
+    // לולאת האנימציה הראשית
+    function loop() {
+        solveLaplace();
+        draw();
+    }
+
+    // --- אינטראקציה ואירועים ---
+
+    let isDrawing = false;
+
+    function paint(event) {
+        if (!isDrawing) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+        const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+        
+        if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+            const tool = document.getElementById('toolSelect').value;
+            
+            // גודל המברשת
+            const brushSize = 2;
+            for(let i = -brushSize; i <= brushSize; i++) {
+                for(let j = -brushSize; j <= brushSize; j++) {
+                    if (x+i > 0 && x+i < GRID_SIZE-1 && y+j > 0 && y+j < GRID_SIZE-1) {
+                        fixed[x+i][y+j] = true;
+                        if (tool === 'wall') {
+                            fixed[x+i][y+j] = false; // שחרר את הנעילה
+                        } else {
+                            u[x+i][y+j] = parseFloat(tool);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    canvas.addEventListener('mousedown', (e) => { isDrawing = true; paint(e); });
+    canvas.addEventListener('mousemove', paint);
+    canvas.addEventListener('mouseup', () => isDrawing = false);
+    canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+    // --- תרחישים מוכנים מראש ---
+
+    function clearGrid() {
+        initGrid();
+    }
+
+    function setScenario(type) {
+        clearGrid();
+        if (type === 'plate') {
+            // לוח עליון חם, תחתון קר
+            for (let x = 0; x < GRID_SIZE; x++) {
+                u[x][1] = 1; fixed[x][1] = true;
+                u[x][GRID_SIZE-2] = -1; fixed[x][GRID_SIZE-2] = true;
+            }
+        } else if (type === 'dipole') {
+            // שתי נקודות במרכז
+            const mid = Math.floor(GRID_SIZE / 2);
+            // נקודה חיובית
+            for(let i=-2; i<=2; i++) for(let j=-2; j<=2; j++) {
+                u[mid-15+i][mid+j] = 1; fixed[mid-15+i][mid+j] = true;
+                u[mid+15+i][mid+j] = -1; fixed[mid+15+i][mid+j] = true;
+            }
+        } else if (type === 'box') {
+            // קופסה חיצונית קרה, נקודה חמה בפנים
+            for (let i = 0; i < GRID_SIZE; i++) {
+                // מסגרת
+                u[i][0] = -1; fixed[i][0] = true;
+                u[i][GRID_SIZE-1] = -1; fixed[i][GRID_SIZE-1] = true;
+                u[0][i] = -1; fixed[0][i] = true;
+                u[GRID_SIZE-1][i] = -1; fixed[GRID_SIZE-1][i] = true;
+            }
+            // גוף חימום במרכז
+             const mid = Math.floor(GRID_SIZE / 2);
+             for(let i=-5; i<=5; i++) for(let j=-5; j<=5; j++) {
+                u[mid+i][mid+j] = 1; fixed[mid+i][mid+j] = true;
+             }
+        }
+    }
+
+    // התחלה
+    initGrid();
+    setScenario('dipole'); // התחל עם דוגמה מעניינת
+    loop();
+
+</script>
+
+</body>
+</html>

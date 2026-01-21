@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>המעבדה לפיזיקה - הגרסה המלאה</title>
+    
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        :root {
+            --bg: #020617;
+            --panel: #1e293b;
+            --accent: #38bdf8;
+            --text: #f8fafc;
+            --success: #4ade80;
+            --danger: #f87171;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* --- תפריט טאבים --- */
+        .tabs {
+            display: flex;
+            background: #0f172a;
+            border-bottom: 1px solid #334155;
+            padding: 0 20px;
+            gap: 5px;
+        }
+        
+        .tab-btn {
+            padding: 15px 25px;
+            background: transparent;
+            color: #94a3b8;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: 0.3s;
+        }
+        
+        .tab-btn:hover { background: #1e293b; color: white; }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: bold; }
+
+        /* --- אזור תוכן --- */
+        .main-container {
+            flex: 1;
+            position: relative; /* חשוב למיקום הטאבים */
+        }
+
+        .page {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: none; /* מוסתר ברירת מחדל */
+            grid-template-columns: 320px 1fr 320px;
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .page.active { display: grid; }
+
+        /* --- פאנלים --- */
+        .panel {
+            background: var(--panel);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            gap: 15px;
+        }
+
+        h2 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 5px; }
+
+        /* --- קנבס וסימולציה --- */
+        .sim-container {
+            position: relative;
+            background: #000;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* גודל קנבס פנימי קבוע - נמתח ב-CSS */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated; /* מונע טשטוש */
+        }
+
+        .wrapper {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            overflow: hidden;
+        }
+
+        /* --- סמן עכבר ונקודות --- */
+        .overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+        
+        .probe {
+            position: absolute;
+            width: 16px; height: 16px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px black;
+            pointer-events: none;
+            display: none;
+            z-index: 20;
+        }
+        .probe::after { content:''; position: absolute; top:50%; left:50%; width:2px; height:2px; background:red; transform:translate(-50%,-50%); }
+
+        /* --- בקרים וטקסט --- */
+        label { display: flex; justify-content: space-between; font-size: 0.9rem; color: #cbd5e1; }
+        input[type="range"] { width: 100%; margin: 5px 0; accent-color: var(--accent); cursor: pointer; }
+        
+        .data-row {
+            display: flex; justify-content: space-between;
+            border-bottom: 1px solid #334155;
+            padding: 8px 0;
+            font-family: monospace;
+            font-size: 0.95rem;
+        }
+        .val { color: var(--accent); font-weight: bold; }
+        
+        .status-badge {
+            text-align: center; padding: 10px; background: #0f172a;
+            border-radius: 6px; margin-top: auto; font-weight: bold; color: #64748b;
+        }
+
+        /* --- פריסות מיוחדות --- */
+        .split-view {
+            display: grid;
+            grid-template-rows: 150px 1fr; /* למעלה קבוע, למטה גמיש */
+            height: 100%;
+            gap: 10px;
+        }
+        
+        .math-box {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-right: 3px solid var(--accent);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="setTab('p1')">1. התאבכות מקורות (יאנג)</button>
+    <button class="tab-btn" onclick="setTab('p2')">2. שכבות דקות (בועות)</button>
+    <button class="tab-btn" onclick="switchTab('p3')">3. טבעות ניוטון</button>
+</div>
+
+<div class="main-container">
+
+    <div id="p1" class="page active">
+        <div class="panel">
+            <h2>פרמטרים</h2>
+            <label>מרחק בין מקורות ($d$): <span id="l_d"></span></label><input type="range" id="i_d" min="0" max="150" value="50">
+            <label>אורך גל ($\lambda$): <span id="l_l"></span></label><input type="range" id="i_l" min="20" max="100" value="40">
+            <hr style="border-color:#334155; width:100%">
+            <label>עוצמה מקור 1: <span id="l_a1"></span></label><input type="range" id="i_a1" min="0" max="2" step="0.1" value="1">
+            <label>עוצמה מקור 2: <span id="l_a2"></span></label><input type="range" id="i_a2" min="0" max="2" step="0.1" value="1">
+            <label>הפרש פאזה: <span id="l_p"></span></label><input type="range" id="i_p" min="0" max="360" value="0">
+            
+            <button onclick="toggleMode1()" style="margin-top:10px; padding:10px; background:#334155; color:white; border:none; border-radius:6px; cursor:pointer;">
+                החלף תצוגה: גל / עוצמה
+            </button>
+        </div>
+
+        <div class="sim-container">
+            <div class="wrapper" id="wrap1">
+                <canvas id="c1" width="300" height="200"></canvas>
+                <div id="overlay1" class="overlay"></div>
+                <div id="probe1" class="probe"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>מדידה חיה</h2>
+            <div class="math-box">
+                תנאי התאבכות:<br>
+                $$ n_{eff} = \frac{\Delta r}{\lambda} + \frac{\phi}{360^{\circ}} $$
+            </div>
+            <div class="data-row"><span>מרחק 1 ($r_1$):</span> <span id="v_r1" class="val">-</span></div>
+            <div class="data-row"><span>מרחק 2 ($r_2$):</span> <span id="v_r2" class="val">-</span></div>
+            <div class="data-row"><span>הפרש דרך ($\Delta r$):</span> <span id="v_dr" class="val">-</span></div>
+            <div class="data-row" style="border-top:1px solid #aaa; color:white;">
+                <span>סה"כ מחזורים:</span> <span id="v_sum" class="val" style="color:white; font-size:1.1rem">-</span>
+            </div>
+            <div id="st1" class="status-badge">הזז את העכבר בבריכה</div>
+        </div>
+    </div>
+
+
+    <div id="p2" class="page">
+        <div class="panel">
+            <h2>מאפייני הבועה</h2>
+            <label>עובי בסיס ($w$): <span id="l_w"></span> nm</label><input type="range" id="i_w" min="10" max="800" value="300">
+            <label>מקדם שבירה ($n$): <span id="l_n"></span></label><input type="range" id="i_n" min="1.1" max="2.0" step="0.01" value="1.33">
+            <label>שונות (כבידה): <span id="l_v"></span></label><input type="range" id="i_v" min="0" max="300" value="150">
+        </div>
+
+        <div class="sim-container" style="background:#000;">
+            <div class="split-view">
+                <div style="position:relative; background:#0f172a; border-bottom:1px solid #333;">
+                    <canvas id="c2a" width="300" height="150"></canvas>
+                    <div style="position:absolute; top:5px; right:5px; font-size:12px; color:#888;">שרטוט קרניים</div>
+                </div>
+                <div style="position:relative;">
+                    <canvas id="c2b" width="300" height="150"></canvas>
+                    <div style="position:absolute; bottom:5px; left:5px; font-size:12px; color:#888;">צבע ההתאבכות</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>הפיזיקה</h2>
+            <div class="math-box">
+                הפרש פאזה כולל:<br>
+                $$ \Delta \Phi = \frac{4\pi n w}{\lambda} - \pi $$
+                <br>
+                <small style="color:#aaa">* המינוס פאי נובע מהיפוך פאזה בהחזרה הראשונה.</small>
+            </div>
+            <div class="status-badge" style="background:#000; text-align:right;">
+                <span style="color:#facc15">טיפ:</span> הקטן את העובי למינימום. הבועה תהפוך שחורה למעלה (התאבכות הורסת בגלל הפאזה).
+            </div>
+        </div>
+    </div>
+
+
+    <div id="p3" class="page">
+        <div class="panel">
+            <h2>העדשה</h2>
+            <label>רדיוס העדשה ($R$): <span id="l_nR"></span></label><input type="range" id="i_nR" min="10" max="100" value="30">
+            <label>אורך גל ($\lambda$): <span id="l_nl"></span></label><input type="range" id="i_nl" min="400" max="700" value="550">
+            <label>זום (Zoom): <span id="l_nz"></span></label><input type="range" id="i_nz" min="1" max="5" step="0.1" value="2">
+        </div>
+
+        <div class="sim-container">
+            <div class="split-view">
+                <div style="position:relative; border-bottom:1px solid #333;">
+                    <canvas id="c3a" width="300" height="150"></canvas>
+                    <div style="position:absolute; top:5px; right:5px; font-size:12px; color:#888;">חתך צד (מוגזם)</div>
+                </div>
+                <div class="wrapper" id="wrap3">
+                    <canvas id="c3b" width="300" height="300"></canvas>
+                    <div id="probe3" class="probe"></div>
+                    <div style="position:absolute; bottom:5px; left:5px; font-size:12px; color:#888;">מבט מלמעלה</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>מדידה</h2>
+            <div class="math-box">
+                עובי אוויר מקומי:<br>
+                $$ t(r) \approx \frac{r^2}{2R} $$
+            </div>
+            <div class="data-row"><span>רדיוס מדידה ($r$):</span> <span id="v_nr_r" class="val">-</span></div>
+            <div class="data-row"><span>עובי אוויר ($t$):</span> <span id="v_nr_t" class="val">-</span></div>
+            <div class="data-row" style="margin-top:10px; border:none;">
+                <span>מס' טבעת ($m$):</span> <span id="v_nr_m" class="val" style="font-size:1.2rem; color:white;">-</span>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- ניהול גלובלי ---
+    let activeTab = 'p1';
+
+    // פונקציית מעבר טאבים שלא הורסת את הקנבס
+    window.setTab = function(id) { // שים לב: window.setTab הופך אותה לגלובלית
+        document.querySelectorAll('.page').forEach(e => e.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        
+        document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+        // הדגשת הכפתור הפעיל
+        const buttons = document.querySelectorAll('.tab-btn');
+        if(id=='p1') buttons[0].classList.add('active');
+        if(id=='p2') buttons[1].classList.add('active');
+        if(id=='p3') buttons[2].classList.add('active');
+
+        activeTab = id;
+        
+        // טריגר לרענון (חשוב!)
+        setTimeout(() => {
+            update1(); 
+            update2(); 
+            update3();
+        }, 50);
+    }
+    // Alias for the button onclick
+    window.switchTab = window.setTab; 
+
+
+    // ============================================
+    // לוגיקה עמוד 1: מקורות
+    // ============================================
+    const ctx1 = document.getElementById('c1').getContext('2d');
+    const img1 = ctx1.createImageData(300, 200);
+    const buf1 = new Uint32Array(img1.data.buffer);
+    
+    let mode1 = 'wave';
+    let t1 = 0;
+    
+    // UI Elements
+    const ui1 = { 
+        d: document.getElementById('i_d'), l: document.getElementById('i_l'), 
+        a1: document.getElementById('i_a1'), a2: document.getElementById('i_a2'), p: document.getElementById('i_p') 
+    };
+
+    // חישוב מראש של צבעים (Optimization)
+    const palW = new Uint32Array(512); // גל
+    const palI = new Uint32Array(512); // עוצמה
+    
+    for(let i=0; i<512; i++) {
+        // Wave Palette (Blue/White)
+        let n=(i-256)/128; let r=0,g=0,b=0;
+        if(n>0){let v=Math.min(255,n*180);r=v*0.4;g=v*0.8;b=v;} else{let v=Math.min(255,Math.abs(n)*180);r=0;g=v*0.2;b=v*0.8;}
+        palW[i]=(255<<24)|(b<<16)|(g<<8)|r;
+        
+        // Intensity Palette (Fire)
+        let u=i/511; let ir=0,ig=0,ib=0;
+        if(u<0.33){ir=u*3*255;}else if(u<0.66){ir=255;ig=(u-0.33)*3*255;}else{ir=255;ig=255;ib=(u-0.66)*3*255;}
+        palI[i]=(255<<24)|(ib<<16)|(ig<<8)|ir;
+    }
+
+    function toggleMode1() { 
+        mode1 = (mode1 === 'wave') ? 'intensity' : 'wave'; 
+    }
+
+    function update1() {
+        // עדכון טקסטים
+        document.getElementById('l_d').innerText = ui1.d.value;
+        document.getElementById('l_l').innerText = ui1.l.value;
+        document.getElementById('l_a1').innerText = ui1.a1.value;
+        document.getElementById('l_a2').innerText = ui1.a2.value;
+        document.getElementById('l_p').innerText = ui1.p.value;
+
+        // ציור נקודות צהובות על ה-Overlay
+        const ov = document.getElementById('overlay1');
+        ov.innerHTML = '';
+        const rect = document.getElementById('wrap1').getBoundingClientRect();
+        if(rect.width > 0) {
+            const scale = rect.width / 300; 
+            const d = parseFloat(ui1.d.value)/2; 
+            const cx = rect.width/2; const cy = rect.height/2;
+            const dist = d * scale;
+            
+            createDot(ov, cx - dist, cy);
+            createDot(ov, cx + dist, cy);
+        }
+    }
+
+    function createDot(p, x, y) {
+        const d = document.createElement('div');
+        d.style.cssText = `position:absolute; width:10px; height:10px; background:gold; border-radius:50%; transform:translate(-50%,-50%); left:${x}px; top:${y}px; box-shadow:0 0 5px black;`;
+        p.appendChild(d);
+    }
+
+    function loop1() {
+        if(activeTab === 'p1') {
+            const d = parseFloat(ui1.d.value)/2;
+            const l = parseFloat(ui1.l.value)/2;
+            const k = (2*Math.PI)/l;
+            const p = parseFloat(ui1.p.value)*(Math.PI/180);
+            const a1v = parseFloat(ui1.a1.value);
+            const a2v = parseFloat(ui1.a2.value);
+            const cx=150, cy=100; // Center of 300x200 canvas
+
+            let idx=0;
+            if(mode1 === 'wave') {
+                for(let y=0; y<200; y++) {
+                    let dy2 = (y-cy)**2;
+                    for(let x=0; x<300; x++) {
+                        let r1 = Math.sqrt((x-(cx-d))**2 + dy2);
+                        let r2 = Math.sqrt((x-(cx+d))**2 + dy2);
+                        // דעיכה
+                        let amp1 = a1v / Math.sqrt(r1*0.2 + 1);
+                        let amp2 = a2v / Math.sqrt(r2*0.2 + 1);
+                        
+                        let val = amp1*Math.sin(k*r1 - t1) + amp2*Math.sin(k*r2 - t1 + p);
+                        let c = Math.floor(val*80 + 256);
+                        if(c<0)c=0; if(c>511)c=511;
+                        buf1[idx++] = palW[c];
+                    }
+                }
+                t1 += 0.3;
+            } else {
+                for(let y=0; y<200; y++) {
+                    let dy2 = (y-cy)**2;
+                    for(let x=0; x<300; x++) {
+                        let r1 = Math.sqrt((x-(cx-d))**2 + dy2);
+                        let r2 = Math.sqrt((x-(cx+d))**2 + dy2);
+                        let amp1 = a1v / (r1*0.2 + 1);
+                        let amp2 = a2v / (r2*0.2 + 1);
+                        let delta = k*(r2-r1) + p;
+                        let I = amp1*amp1 + amp2*amp2 + 2*amp1*amp2*Math.cos(delta);
+                        let c = Math.floor(I*100);
+                        if(c>511)c=511;
+                        buf1[idx++] = palI[c];
+                    }
+                }
+            }
+            ctx1.putImageData(img1, 0, 0);
+        }
+        requestAnimationFrame(loop1);
+    }
+
+    // אינטראקציית עכבר (עמוד 1)
+    document.getElementById('wrap1').addEventListener('mousemove', e => {
+        const r = e.target.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const my = e.clientY - r.top;
+        
+        // מיקום הסמן
+        const pr = document.getElementById('probe1');
+        pr.style.display = 'block';
+        pr.style.left = mx + 'px';
+        pr.style.top = my + 'px';
+
+        // המרה לקואורדינטות פנימיות
+        const sx = mx * (300/r.width);
+        const sy = my * (200/r.height);
+        
+        const d = parseFloat(ui1.d.value)/2;
+        const l = parseFloat(ui1.l.value)/2;
+        const p = parseFloat(ui1.p.value)/360;
+        
+        const r1 = Math.sqrt((sx-(150-d))**2 + (sy-100)**2);
+        const r2 = Math.sqrt((sx-(150+d))**2 + (sy-100)**2);
+        const dr = Math.abs(r2-r1);
+        const ratio = dr/l + p;
+        
+        document.getElementById('v_r1').innerText = (r1*2).toFixed(1);
+        document.getElementById('v_r2').innerText = (r2*2).toFixed(1);
+        document.getElementById('v_dr').innerText = (dr*2).toFixed(1);
+        document.getElementById('v_sum').innerText = ratio.toFixed(2);
+        
+        const badge = document.getElementById('st1');
+        const f = Math.abs(ratio - Math.round(ratio));
+        if(f < 0.15) {
+            badge.innerText = "התאבכות בונה (מקסימום)";
+            badge.style.color = "#4ade80";
+        } else if (Math.abs(f - 0.5) < 0.15) {
+            badge.innerText = "התאבכות הורסת (מינימום)";
+            badge.style.color = "#f87171";
+        } else {
+            badge.innerText = "מצב ביניים";
+            badge.style.color = "#94a3b8";
+        }
+    });
+    
+    document.getElementById('wrap1').addEventListener('mouseleave', ()=>{
+        document.getElementById('probe1').style.display='none';
+    });
+
+
+    // ============================================
+    // לוגיקה עמוד 2: בועות סבון
+    // ============================================
+    const ctx2a = document.getElementById('c2a').getContext('2d'); // Ray
+    const ctx2b = document.getElementById('c2b').getContext('2d'); // Color
+    const img2b = ctx2b.createImageData(300, 150);
+    const buf2b = new Uint32Array(img2b.data.buffer);
+    
+    const ui2 = { w:document.getElementById('i_w'), n:document.getElementById('i_n'), v:document.getElementById('i_v') };
+
+    function update2() {
+        const w = parseFloat(ui2.w.value);
+        const n = parseFloat(ui2.n.value);
+        const v = parseFloat(ui2.v.value);
+        
+        document.getElementById('l_w').innerText = w;
+        document.getElementById('l_n').innerText = n;
+        document.getElementById('l_v').innerText = v;
+
+        // 1. שרטוט קרניים (Ray Diagram)
+        ctx2a.clearRect(0,0,300,150);
+        ctx2a.fillStyle = "#0f172a"; ctx2a.fillRect(0,0,300,150);
+        
+        const thickVis = w / 10; 
+        const mid = 75;
+        
+        // החומר
+        ctx2a.fillStyle = "rgba(14, 165, 233, 0.2)";
+        ctx2a.fillRect(0, mid, 300, thickVis);
+        ctx2a.strokeStyle = "#0ea5e9";
+        ctx2a.beginPath(); ctx2a.moveTo(0,mid); ctx2a.lineTo(300,mid); ctx2a.stroke();
+        ctx2a.beginPath(); ctx2a.moveTo(0,mid+thickVis); ctx2a.lineTo(300,mid+thickVis); ctx2a.stroke();
+        
+        // הקרניים
+        ctx2a.strokeStyle = "gold"; ctx2a.lineWidth = 2;
+        ctx2a.beginPath(); ctx2a.moveTo(50, 20); ctx2a.lineTo(100, mid); ctx2a.stroke(); // כניסה
+        ctx2a.beginPath(); ctx2a.moveTo(100, mid); ctx2a.lineTo(150, 20); ctx2a.stroke(); // החזרה 1
+        
+        ctx2a.strokeStyle = "rgba(255, 215, 0, 0.5)";
+        ctx2a.beginPath(); ctx2a.moveTo(100, mid); ctx2a.lineTo(120, mid+thickVis); ctx2a.lineTo(140, mid); ctx2a.stroke(); // שבירה
+        
+        ctx2a.strokeStyle = "gold";
+        ctx2a.beginPath(); ctx2a.moveTo(140, mid); ctx2a.lineTo(190, 20); ctx2a.stroke(); // החזרה 2
+
+        // 2. צביעת הבועה
+        // מחשבים צבע לכל שורה (לפי עובי)
+        for(let y=0; y<150; y++) {
+            let prog = y / 150;
+            // עובי משתנה עם גרדיאנט + רעש
+            let th = w * prog + Math.sin(y*0.1) * v * 0.2;
+            if(th < 0) th = 0;
+            
+            // חישוב RGB לפי התאבכות
+            // R=650, G=530, B=460
+            // I = cos^2( (4*PI*n*th)/lam - PI ) / 2
+            
+            let r = Math.cos( ((4*Math.PI*n*th)/650 - Math.PI)/2 )**2 * 255;
+            let g = Math.cos( ((4*Math.PI*n*th)/530 - Math.PI)/2 )**2 * 255;
+            let b = Math.cos( ((4*Math.PI*n*th)/460 - Math.PI)/2 )**2 * 255;
+            
+            let col = (255<<24) | (b<<16) | (g<<8) | r;
+            
+            for(let x=0; x<300; x++) {
+                // מסכה עגולה
+                let dx = x - 150;
+                let dy = y - 75;
+                // אליפסה
+                if( (dx*dx)/(140*140) + (dy*dy)/(70*70) <= 1 ) {
+                    buf2b[y*300+x] = col;
+                } else {
+                    buf2b[y*300+x] = 0; // שקוף
+                }
+            }
+        }
+        ctx2b.putImageData(img2b, 0, 0);
+    }
+
+
+    // ============================================
+    // לוגיקה עמוד 3: טבעות ניוטון
+    // ============================================
+    const ctx3a = document.getElementById('c3a').getContext('2d');
+    const ctx3b = document.getElementById('c3b').getContext('2d');
+    const img3b = ctx3b.createImageData(300, 300);
+    const buf3b = new Uint32Array(img3b.data.buffer);
+    
+    const ui3 = { R:document.getElementById('i_nR'), l:document.getElementById('i_nl'), z:document.getElementById('i_nz') };
+
+    // המרת אורך גל לצבע RGB (קירוב)
+    function wl2rgb(l){
+        let r=0,g=0,b=0;
+        if(l>=400&&l<440){r=-(l-440)/40;b=1;}
+        else if(l>=440&&l<490){g=(l-440)/50;b=1;}
+        else if(l>=490&&l<510){g=1;b=-(l-510)/20;}
+        else if(l>=510&&l<580){r=(l-510)/70;g=1;}
+        else if(l>=580&&l<645){r=1;g=-(l-645)/65;}
+        else if(l>=645){r=1;}
+        return [r*255, g*255, b*255];
+    }
+
+    function update3() {
+        const R = parseFloat(ui3.R.value);
+        const l = parseFloat(ui3.l.value);
+        const z = parseFloat(ui3.z.value);
+        
+        document.getElementById('l_nR').innerText = R;
+        document.getElementById('l_nl').innerText = l;
+        document.getElementById('l_nz').innerText = z;
+
+        // 1. צד: שרטוט העדשה
+        ctx3a.clearRect(0,0,300,150);
+        ctx3a.fillStyle = "#334155"; ctx3a.fillRect(0, 140, 300, 10); // משטח
+        
+        ctx3a.strokeStyle = "#0ea5e9"; ctx3a.lineWidth = 2;
+        ctx3a.beginPath();
+        let h = 100/R * 5; // הגזמה ויזואלית
+        ctx3a.moveTo(0, 140-h);
+        ctx3a.quadraticCurveTo(150, 140+h, 300, 140-h);
+        ctx3a.stroke();
+
+        // 2. למעלה: הטבעות
+        const [cr, cg, cb] = wl2rgb(l);
+        const cx=150, cy=150;
+        const scale = 5 * z; // פיקסלים למילימטר
+        
+        for(let y=0; y<300; y++) {
+            let dy = y - cy;
+            let dy2 = dy*dy;
+            for(let x=0; x<300; x++) {
+                let dx = x - cx;
+                let rPix = Math.sqrt(dx*dx + dy2);
+                
+                if(rPix > 145) { buf3b[y*300+x]=0; continue; }
+                
+                let rMM = rPix / scale;
+                // הנוסחה: t = r^2 / 2R
+                // פקטור סקיילינג כדי שזה יראה טוב במסך
+                let t = (rMM * rMM) / (2 * R/10) * 1000; 
+                
+                // Phase = 4*PI*t/lambda + PI
+                let ph = (4*Math.PI*t)/l + Math.PI;
+                let I = Math.sin(ph/2)**2;
+                
+                buf3b[y*300+x] = (255<<24) | ((cb*I)<<16) | ((cg*I)<<8) | (cr*I);
+            }
+        }
+        ctx3b.putImageData(img3b, 0, 0);
+    }
+
+    // אינטראקציה טבעות ניוטון
+    document.getElementById('wrap3').addEventListener('mousemove', e => {
+        const r = e.target.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const my = e.clientY - r.top;
+        
+        const pr = document.getElementById('probe3');
+        pr.style.display='block'; pr.style.left=mx+'px'; pr.style.top=my+'px';
+        
+        // המרה לסקאלה פנימית 300x300
+        const sx = mx * (300/r.width);
+        const sy = my * (300/r.height);
+        
+        const rPix = Math.sqrt((sx-150)**2 + (sy-150)**2);
+        
+        const z = parseFloat(ui3.z.value);
+        const R = parseFloat(ui3.R.value);
+        const l = parseFloat(ui3.l.value);
+        
+        const rMM = rPix / (5 * z);
+        const t = (rMM*rMM)/(2*R/10) * 1000;
+        
+        // מספר הטבעת (בערך)
+        // Dark ring: r = sqrt(m*l*R) -> m = r^2 / lR
+        // נרמול יחידות גס לתצוגה
+        const m = (rMM*rMM) / (l/1000 * R/10); 
+        
+        document.getElementById('v_nr_r').innerText = rMM.toFixed(2);
+        document.getElementById('v_nr_t').innerText = t.toFixed(0);
+        document.getElementById('v_nr_m').innerText = m.toFixed(1);
+    });
+    
+    document.getElementById('wrap3').addEventListener('mouseleave', ()=>{
+        document.getElementById('probe3').style.display='none';
+    });
+
+
+    // --- אתחול והאזנה ---
+    // הוספת מאזינים לכל הסליידרים
+    document.querySelectorAll('input').forEach(el => {
+        el.addEventListener('input', () => {
+            update1();
+            update2();
+            update3();
+        });
+    });
+
+    // הפעלה ראשונית
+    update1();
+    update2();
+    update3();
+    loop1();
+
+</script>
+
+</body>
+</html>
